@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Send, Dumbbell, Heart, Zap, User, Bot } from 'lucide-react'
 import './ChatInterface.css'
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') : 'http://127.0.0.1:8000'
 const CHAT_ENDPOINT = `${API_BASE_URL}/api/chat`
 
 const createMessage = (type, content) => ({
@@ -51,15 +51,18 @@ const ChatInterface = () => {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
-    let done = false
 
-    while (!done) {
-      const { value, done: readerDone } = await reader.read()
-      done = readerDone
-      if (value) {
-        const chunk = decoder.decode(value, { stream: true })
-        onChunk(chunk)
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true })
+          onChunk(chunk)
+        }
       }
+    } finally {
+      reader.releaseLock()
     }
   }
 

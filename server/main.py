@@ -99,12 +99,22 @@ async def create_chat_completion(payload: ChatRequest):
     async def stream_generator():
         try:
             async for chunk in dispatch_to_provider(payload.message, payload.context):
+                # Enviar el chunk con un salto de línea para forzar el flush en algunos navegadores
                 yield chunk
+                # Pequeña pausa para permitir que el buffer se vacíe
+                import asyncio
+                await asyncio.sleep(0.01)
         except Exception as exc:
             logger.exception("Error generando respuesta LLM")
             yield f"\n[Error: {str(exc)}]"
 
-    return StreamingResponse(stream_generator(), media_type="text/plain")
+    # Volvemos a text/plain pero con un header especial para evitar buffering
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+    }
+    return StreamingResponse(stream_generator(), media_type="text/plain", headers=headers)
 
 
 @app.get("/api/health")
