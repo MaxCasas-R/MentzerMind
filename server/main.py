@@ -97,24 +97,25 @@ async def create_chat_completion(payload: ChatRequest):
         raise HTTPException(status_code=400, detail="El campo 'message' es obligatorio")
 
     async def stream_generator():
+        import json
         try:
             async for chunk in dispatch_to_provider(payload.message, payload.context):
-                # Enviar el chunk con un salto de línea para forzar el flush en algunos navegadores
-                yield chunk
-                # Pequeña pausa para permitir que el buffer se vacíe
-                import asyncio
-                await asyncio.sleep(0.01)
+                # Enviar el chunk en formato SSE (Server-Sent Events)
+                data = json.dumps({"text": chunk})
+                yield f"data: {data}\n\n"
+            # Señal explícita de fin de stream
+            yield "data: [DONE]\n\n"
         except Exception as exc:
             logger.exception("Error generando respuesta LLM")
-            yield f"\n[Error: {str(exc)}]"
+            error_data = json.dumps({"error": str(exc)})
+            yield f"data: {error_data}\n\n"
 
-    # Volvemos a text/plain pero con un header especial para evitar buffering
+    # Volvemos a text/event-stream que es el estándar para esto
     headers = {
-        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
     }
-    return StreamingResponse(stream_generator(), media_type="text/plain", headers=headers)
+    return StreamingResponse(stream_generator(), media_type="text/event-stream", headers=headers)
 
 
 @app.get("/api/health")

@@ -51,15 +51,31 @@ const ChatInterface = () => {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
+    let buffer = ''
 
     try {
       while (true) {
         const { value, done } = await reader.read()
-        if (done) break
         if (value) {
-          const chunk = decoder.decode(value, { stream: true })
-          onChunk(chunk)
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n\n')
+          buffer = lines.pop() // El último elemento es el resto incompleto
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6)
+              if (dataStr === '[DONE]') return
+              try {
+                const data = JSON.parse(dataStr)
+                if (data.text) onChunk(data.text)
+                if (data.error) throw new Error(data.error)
+              } catch (e) {
+                console.error('Error parseando SSE:', e)
+              }
+            }
+          }
         }
+        if (done) break
       }
     } finally {
       reader.releaseLock()
