@@ -23,10 +23,13 @@ const ChatInterface = () => {
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef(null)
 
-  const sendMessageToApi = async (text, currentMessages) => {
+  const sendMessageToApi = async (text, currentMessages, onChunk) => {
     const context = currentMessages
       .slice(-6)
-      .map(m => `${m.type === 'bot' ? 'Asistente' : 'Usuario'}: ${m.content}`)
+      .map(m => ({
+        role: m.type === 'bot' ? 'assistant' : 'user',
+        content: m.content
+      }))
 
     const response = await fetch(CHAT_ENDPOINT, {
       method: 'POST',
@@ -42,12 +45,22 @@ const ChatInterface = () => {
       throw new Error(`Error del servidor (${response.status}): ${errorBody}`)
     }
 
-    const data = await response.json()
-    if (!data?.reply) {
-      throw new Error('La API no devolvió una respuesta válida.')
+    if (!response.body) {
+      throw new Error('La API no devolvió un stream válido.')
     }
 
-    return data.reply
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let done = false
+
+    while (!done) {
+      const { value, done: readerDone } = await reader.read()
+      done = readerDone
+      if (value) {
+        const chunk = decoder.decode(value, { stream: true })
+        onChunk(chunk)
+      }
+    }
   }
 
   const scrollToBottom = () => {
@@ -69,17 +82,32 @@ const ChatInterface = () => {
     setInputMessage('')
     setIsTyping(true)
 
+    // Crear un mensaje vacío para el bot que iremos llenando
+    const botMessageId = `bot-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setMessages(prev => [
+      ...prev,
+      { id: botMessageId, type: 'bot', content: '', timestamp: new Date() }
+    ])
+
     try {
-      const reply = await sendMessageToApi(trimmedMessage, currentMessages)
-      const botMessage = createMessage('bot', reply)
-      setMessages(prev => [...prev, botMessage])
+      await sendMessageToApi(trimmedMessage, currentMessages, (chunk) => {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === botMessageId 
+              ? { ...msg, content: msg.content + chunk }
+              : msg
+          )
+        )
+      })
     } catch (error) {
       console.error('Error al obtener respuesta del backend:', error)
-      const errorMessage = createMessage(
-        'bot',
-        'Hubo un problema al generar la respuesta. Por favor, intenta de nuevo en unos segundos.'
+      setMessages(prev => 
+        prev.map(msg => 
+          msg.id === botMessageId 
+            ? { ...msg, content: 'Hubo un problema al generar la respuesta. Por favor, intenta de nuevo en unos segundos.' }
+            : msg
+        )
       )
-      setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsTyping(false)
     }

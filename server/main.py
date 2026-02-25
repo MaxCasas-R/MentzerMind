@@ -1,11 +1,16 @@
 import logging
 import os
-from typing import List, Optional
+from typing import AsyncGenerator, List, Optional
 
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from services.gemini_service import call_gemini
+from services.local_service import call_local_stub
+from services.openai_service import call_openai
 
 load_dotenv()
 
@@ -22,12 +27,17 @@ DEFAULT_SYSTEM_PROMPT = (
 SUPPORTED_PROVIDERS = {"openai", "local", "gemini"}
 
 
+class MessageDict(BaseModel):
+    role: str
+    content: str
+
+
 class ChatRequest(BaseModel):
     """Payload esperado desde el frontend."""
 
     message: str
     conversationId: Optional[str] = None
-    context: Optional[List[str]] = None
+    context: Optional[List[MessageDict]] = None
 
 
 class ChatResponse(BaseModel):
@@ -37,6 +47,15 @@ class ChatResponse(BaseModel):
 
 
 app = FastAPI(title="MentzerMind API", version="0.1.0")
+
+# Configuración de CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # En producción, cambiar por el dominio del frontend
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def get_llm_provider() -> str:
@@ -52,137 +71,40 @@ def get_system_prompt() -> str:
     return prompt if prompt else DEFAULT_SYSTEM_PROMPT
 
 
-def build_user_prompt(message: str, context: Optional[List[str]]) -> str:
-    if not context:
-        return message
-
-    context_block = "\n\n".join(context)
-    return (
-        "Información de referencia:\n"
-        f"{context_block}\n\n"
-        "Pregunta del usuario:\n"
-        f"{message}"
-    )
-
-
-async def call_openai(prompt: str, system_prompt: str) -> str:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY no está configurada")
-
-    payload = {
-        "model": os.getenv("OPENAI_MODEL", "gpt-3.5-turbo"),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.3")),
-        "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "500")),
-    }
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    timeout = float(os.getenv("OPENAI_TIMEOUT", "30"))
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            json=payload,
-            headers=headers,
-        )
-
-    if response.status_code != 200:
-        error_text = response.text
-        logger.error("Error al llamar a OpenAI: %s", error_text)
-        raise RuntimeError(f"OpenAI respondió con {response.status_code}: {error_text}")
-
-    body = response.json()
-    reply = body.get("choices", [{}])[0].get("message", {}).get("content")
-
-    if not reply:
-        logger.error("OpenAI no devolvió contenido válido: %s", body)
-        raise RuntimeError("OpenAI no devolvió una respuesta válida")
-
-    return reply.strip()
-
-
-async def call_gemini(prompt: str, system_prompt: str) -> str:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY no está configurada")
-
-    full_prompt = f"Instrucciones del sistema: {system_prompt}\n\n{prompt}"
-    
-    payload = {
-        "contents": [{"parts": [{"text": full_prompt}]}],
-        "generationConfig": {
-            "temperature": float(os.getenv("GEMINI_TEMPERATURE", "0.3")),
-            "maxOutputTokens": int(os.getenv("GEMINI_MAX_TOKENS", "500")),
-        }
-    }
-
-    headers = {"Content-Type": "application/json"}
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
-    timeout = float(os.getenv("GEMINI_TIMEOUT", "30"))
-
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(url, json=payload, headers=headers)
-
-    if response.status_code != 200:
-        error_text = response.text
-        logger.error("Error al llamar a Gemini: %s", error_text)
-        raise RuntimeError(f"Gemini respondió con {response.status_code}: {error_text}")
-
-    body = response.json()
-    try:
-        reply = body["candidates"][0]["content"]["parts"][0]["text"]
-        return reply.strip()
-    except (KeyError, IndexError) as e:
-        logger.error("Estructura de respuesta de Gemini inesperada: %s", body)
-        raise RuntimeError("Gemini no devolvió una respuesta válida") from e
-
-
-async def call_local_stub(prompt: str, system_prompt: str) -> str:
-    logger.debug("Usando proveedor local stub.")
-    return (
-        "[Modo local] Aún no hay un modelo configurado. "
-        "Mensaje recibido: "
-        f"{prompt}"
-    )
-
-
-async def dispatch_to_provider(message: str, context: Optional[List[str]]) -> str:
+async def dispatch_to_provider(message: str, context: Optional[List[MessageDict]]) -> AsyncGenerator[str, None]:
     provider = get_llm_provider()
     system_prompt = get_system_prompt()
-    prompt = build_user_prompt(message, context)
+    
+    # Convertir MessageDict a dict para los servicios
+    context_dicts = [msg.model_dump() for msg in context] if context else None
 
     if provider == "openai":
-        return await call_openai(prompt, system_prompt)
+        async for chunk in call_openai(message, context_dicts, system_prompt):
+            yield chunk
+    elif provider == "gemini":
+        async for chunk in call_gemini(message, context_dicts, system_prompt):
+            yield chunk
+    elif provider == "local":
+        async for chunk in call_local_stub(message, context_dicts, system_prompt):
+            yield chunk
+    else:
+        yield f"Error: Proveedor LLM '{provider}' no soportado"
 
-    if provider == "gemini":
-        return await call_gemini(prompt, system_prompt)
 
-    if provider == "local":
-        return await call_local_stub(prompt, system_prompt)
-
-    raise RuntimeError(f"Proveedor LLM '{provider}' no soportado")
-
-
-@app.post("/api/chat", response_model=ChatResponse)
-async def create_chat_completion(payload: ChatRequest) -> ChatResponse:
+@app.post("/api/chat")
+async def create_chat_completion(payload: ChatRequest):
     if not payload.message or not payload.message.strip():
         raise HTTPException(status_code=400, detail="El campo 'message' es obligatorio")
 
-    try:
-        reply = await dispatch_to_provider(payload.message, payload.context)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.exception("Error generando respuesta LLM")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    async def stream_generator():
+        try:
+            async for chunk in dispatch_to_provider(payload.message, payload.context):
+                yield chunk
+        except Exception as exc:
+            logger.exception("Error generando respuesta LLM")
+            yield f"\n[Error: {str(exc)}]"
 
-    return ChatResponse(reply=reply)
+    return StreamingResponse(stream_generator(), media_type="text/plain")
 
 
 @app.get("/api/health")
