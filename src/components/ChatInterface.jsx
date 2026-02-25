@@ -1,19 +1,54 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Send, Dumbbell, Heart, Zap, User, Bot } from 'lucide-react'
 import './ChatInterface.css'
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const CHAT_ENDPOINT = `${API_BASE_URL}/api/chat`
+
+const createMessage = (type, content) => ({
+  id: `${type}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  type,
+  content,
+  timestamp: new Date(),
+})
+
 const ChatInterface = () => {
   const [messages, setMessages] = useState([
-    {
-      id: 1,
-      type: 'bot',
-      content: '¡Hola! Soy MentzerMind, tu asistente personal de fitness y nutrición. ¿En qué puedo ayudarte hoy?',
-      timestamp: new Date()
-    }
+    createMessage(
+      'bot',
+      '¡Hola! Soy MentzerMind, tu asistente personal de fitness y nutrición. ¿En qué puedo ayudarte hoy?'
+    )
   ])
   const [inputMessage, setInputMessage] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef(null)
+
+  const sendMessageToApi = async (text, currentMessages) => {
+    const context = currentMessages
+      .slice(-6)
+      .map(m => `${m.type === 'bot' ? 'Asistente' : 'Usuario'}: ${m.content}`)
+
+    const response = await fetch(CHAT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        message: text,
+        context: context 
+      })
+    })
+
+    if (!response.ok) {
+      const errorBody = await response.text()
+      throw new Error(`Error del servidor (${response.status}): ${errorBody}`)
+    }
+
+    const data = await response.json()
+    if (!data?.reply) {
+      throw new Error('La API no devolvió una respuesta válida.')
+    }
+
+    return data.reply
+  }
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -24,53 +59,30 @@ const ChatInterface = () => {
   }, [messages])
 
   const handleSendMessage = async () => {
-    if (inputMessage.trim() === '') return
+    const trimmedMessage = inputMessage.trim()
+    if (trimmedMessage === '' || isTyping) return
 
-    const userMessage = {
-      id: messages.length + 1,
-      type: 'user',
-      content: inputMessage,
-      timestamp: new Date()
-    }
-
+    const userMessage = createMessage('user', trimmedMessage)
+    const currentMessages = [...messages]
+    
     setMessages(prev => [...prev, userMessage])
     setInputMessage('')
     setIsTyping(true)
 
-    // Simulación de respuesta del bot (aquí conectarías con tu backend)
-    setTimeout(() => {
-      const botResponse = {
-        id: messages.length + 2,
-        type: 'bot',
-        content: getBotResponse(inputMessage),
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, botResponse])
+    try {
+      const reply = await sendMessageToApi(trimmedMessage, currentMessages)
+      const botMessage = createMessage('bot', reply)
+      setMessages(prev => [...prev, botMessage])
+    } catch (error) {
+      console.error('Error al obtener respuesta del backend:', error)
+      const errorMessage = createMessage(
+        'bot',
+        'Hubo un problema al generar la respuesta. Por favor, intenta de nuevo en unos segundos.'
+      )
+      setMessages(prev => [...prev, errorMessage])
+    } finally {
       setIsTyping(false)
-    }, 1500)
-  }
-
-  const getBotResponse = (message) => {
-    // Respuestas simuladas para demostración
-    const lowerMessage = message.toLowerCase()
-    
-    if (lowerMessage.includes('ejercicio') || lowerMessage.includes('rutina')) {
-      return 'Te puedo ayudar con rutinas de ejercicio personalizadas. ¿Qué tipo de entrenamiento te interesa? ¿Fuerza, cardio, o tal vez algo específico como brazos o piernas?'
     }
-    
-    if (lowerMessage.includes('dieta') || lowerMessage.includes('nutrición') || lowerMessage.includes('comida')) {
-      return 'Perfecto, la nutrición es clave para alcanzar tus objetivos. ¿Cuál es tu meta principal? ¿Perder peso, ganar masa muscular, o mantener un estilo de vida saludable?'
-    }
-    
-    if (lowerMessage.includes('peso') || lowerMessage.includes('bajar') || lowerMessage.includes('adelgazar')) {
-      return 'Para perder peso de manera saludable, necesitamos crear un déficit calórico combinando una dieta balanceada con ejercicio regular. ¿Cuánto peso te gustaría perder y en qué tiempo?'
-    }
-    
-    if (lowerMessage.includes('músculo') || lowerMessage.includes('masa') || lowerMessage.includes('ganar')) {
-      return 'Para ganar masa muscular necesitas un superávit calórico moderado y entrenamiento de fuerza consistente. ¿Tienes acceso a un gimnasio o prefieres entrenar en casa?'
-    }
-    
-    return 'Entiendo tu consulta. Como parte de mi desarrollo, pronto podré darte respuestas más específicas y personalizadas. ¿Hay algo más específico sobre fitness o nutrición que te interese?'
   }
 
   const handleKeyPress = (e) => {
