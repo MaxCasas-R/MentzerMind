@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Send, Dumbbell, Heart, Zap, User, Bot } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './ChatInterface.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ? import.meta.env.VITE_API_BASE_URL.replace(/\/$/, '') : 'http://127.0.0.1:8000'
@@ -59,9 +61,10 @@ const ChatInterface = () => {
         if (value) {
           buffer += decoder.decode(value, { stream: true })
           const lines = buffer.split('\n\n')
-          buffer = lines.pop() // El último elemento es el resto incompleto
+          buffer = lines.pop() || '' // El último elemento es el resto incompleto
 
           for (const line of lines) {
+            if (line.trim() === '') continue;
             if (line.startsWith('data: ')) {
               const dataStr = line.slice(6)
               if (dataStr === '[DONE]') return
@@ -70,12 +73,28 @@ const ChatInterface = () => {
                 if (data.text) onChunk(data.text)
                 if (data.error) throw new Error(data.error)
               } catch (e) {
-                console.error('Error parseando SSE:', e)
+                console.error('Error parseando SSE:', e, 'Data:', dataStr)
               }
             }
           }
         }
-        if (done) break
+        if (done) {
+          // Procesar cualquier cosa que haya quedado en el buffer al terminar
+          if (buffer.trim() !== '') {
+            if (buffer.startsWith('data: ')) {
+              const dataStr = buffer.slice(6)
+              if (dataStr !== '[DONE]') {
+                try {
+                  const data = JSON.parse(dataStr)
+                  if (data.text) onChunk(data.text)
+                } catch (e) {
+                  // Ignorar errores al final
+                }
+              }
+            }
+          }
+          break
+        }
       }
     } finally {
       reader.releaseLock()
@@ -173,7 +192,13 @@ const ChatInterface = () => {
             </div>
             <div className="message-content">
               <div className="message-bubble">
-                {message.content}
+                {message.type === 'bot' ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {message.content}
+                  </ReactMarkdown>
+                ) : (
+                  message.content
+                )}
               </div>
               <div className="message-time">
                 {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

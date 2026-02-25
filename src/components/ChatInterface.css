@@ -156,6 +156,30 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+/* Estilos para el Markdown dentro de los mensajes del bot */
+.message.bot .message-bubble p {
+  margin-bottom: 0.8rem;
+}
+
+.message.bot .message-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.message.bot .message-bubble strong {
+  color: #00ff80;
+  font-weight: 600;
+}
+
+.message.bot .message-bubble ul, 
+.message.bot .message-bubble ol {
+  margin-left: 1.5rem;
+  margin-bottom: 0.8rem;
+}
+
+.message.bot .message-bubble li {
+  margin-bottom: 0.4rem;
+}
+
 .message.user .message-bubble {
   background: linear-gradient(45deg, #ff0080, #ff8000);
   color: white;
