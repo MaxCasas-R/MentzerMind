@@ -98,14 +98,11 @@ async def create_chat_completion(payload: ChatRequest):
 
     async def stream_generator():
         import json
-        import asyncio
         try:
             async for chunk in dispatch_to_provider(payload.message, payload.context):
                 # Enviar el chunk en formato SSE (Server-Sent Events)
                 data = json.dumps({"text": chunk})
                 yield f"data: {data}\n\n"
-                # Forzar un pequeño delay para que el buffer de red se vacíe
-                await asyncio.sleep(0.01)
             # Señal explícita de fin de stream
             yield "data: [DONE]\n\n"
         except Exception as exc:
