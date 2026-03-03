@@ -55,5 +55,11 @@ async def call_gemini(message: str, context: Optional[List[dict]], system_prompt
                 yield chunk.text
                 
     except Exception as e:
-        logger.error("Error al llamar a Gemini SDK: %s", str(e))
-        yield f"\n[Error de conexión con Gemini: {str(e)}]"
+        error_msg = str(e)
+        logger.error("Error al llamar a Gemini SDK: %s", error_msg)
+        
+        # Ocultar errores técnicos al usuario final
+        if "429" in error_msg or "Quota" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            yield "😅 **Whoops! MentzerMind está entrenando muy duro ahora mismo.** Hemos alcanzado la capacidad máxima de usuarios simultáneos. Por favor, toma un pequeño descanso y vuelve a intentarlo en un par de minutos."
+        else:
+            yield "😅 **Ocurrió un pequeño fallo en el sistema nervioso central.** Por favor, intenta enviar tu mensaje nuevamente."
