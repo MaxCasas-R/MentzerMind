@@ -15,15 +15,51 @@ const createMessage = (type, content) => ({
 })
 
 const ChatInterface = () => {
-  const [messages, setMessages] = useState([
-    createMessage(
-      'bot',
-      '¡Hola! Soy MentzerMind, tu asistente personal de fitness y nutrición. ¿En qué puedo ayudarte hoy?'
-    )
-  ])
+  // Inicializar el estado de mensajes desde Local Storage si existe
+  const [messages, setMessages] = useState(() => {
+    const savedMessages = localStorage.getItem('mentzermind-chat-history')
+    if (savedMessages) {
+      try {
+        const parsed = JSON.parse(savedMessages)
+        // Convertir los strings de fecha de vuelta a objetos Date
+        return parsed.map(msg => ({
+          ...msg,
+          timestamp: new Date(msg.timestamp)
+        }))
+      } catch (e) {
+        console.error('Error al cargar historial:', e)
+      }
+    }
+    return [
+      createMessage(
+        'bot',
+        '¡Hola! Soy MentzerMind, tu asistente personal de fitness y nutrición. ¿En qué puedo ayudarte hoy?'
+      )
+    ]
+  })
+  
   const [inputMessage, setInputMessage] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const messagesEndRef = useRef(null)
+
+  // Guardar mensajes en Local Storage cada vez que cambian
+  useEffect(() => {
+    localStorage.setItem('mentzermind-chat-history', JSON.stringify(messages))
+  }, [messages])
+
+  // Función para borrar el historial
+  const clearHistory = () => {
+    if (window.confirm('¿Estás seguro de que quieres borrar el historial de la conversación?')) {
+      const initialMessage = [
+        createMessage(
+          'bot',
+          '¡Hola! Soy MentzerMind. El historial ha sido borrado. ¿En qué puedo ayudarte hoy?'
+        )
+      ]
+      setMessages(initialMessage)
+      localStorage.removeItem('mentzermind-chat-history')
+    }
+  }
 
   const sendMessageToApi = async (text, currentMessages, onChunk) => {
     const context = currentMessages
@@ -177,9 +213,30 @@ const ChatInterface = () => {
               <p>Tu asistente personal de fitness y nutrición</p>
             </div>
           </div>
-          <div className="status-indicator">
-            <div className="status-dot"></div>
-            <span>En línea</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <button 
+              onClick={clearHistory}
+              style={{
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.3)',
+                color: 'white',
+                padding: '4px 10px',
+                borderRadius: '4px',
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                opacity: messages.length > 1 ? 1 : 0,
+                pointerEvents: messages.length > 1 ? 'auto' : 'none'
+              }}
+              onMouseOver={e => e.target.style.background = 'rgba(255,0,0,0.2)'}
+              onMouseOut={e => e.target.style.background = 'transparent'}
+            >
+              Borrar Chat
+            </button>
+            <div className="status-indicator">
+              <div className="status-dot"></div>
+              <span>En línea</span>
+            </div>
           </div>
         </div>
       </div>
