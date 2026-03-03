@@ -68,6 +68,11 @@
   gap: 0.5rem;
   color: #00ff80;
   font-size: 0.9rem;
+  transition: color 0.3s ease;
+}
+
+.status-indicator.offline {
+  color: #ff4444;
 }
 
 .status-dot {
@@ -77,6 +82,13 @@
   border-radius: 50%;
   animation: pulse 2s infinite;
   box-shadow: 0 0 10px rgba(0, 255, 128, 0.5);
+  transition: all 0.3s ease;
+}
+
+.status-indicator.offline .status-dot {
+  background: #ff4444;
+  box-shadow: 0 0 10px rgba(255, 68, 68, 0.5);
+  animation: none; /* Dejar de pulsar si está desconectado */
 }
 
 @keyframes pulse {

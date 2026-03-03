@@ -40,12 +40,36 @@ const ChatInterface = () => {
   
   const [inputMessage, setInputMessage] = useState('')
   const [isTyping, setIsTyping] = useState(false)
+  const [isOnline, setIsOnline] = useState(true) // Estado para verificar conexión API
   const messagesEndRef = useRef(null)
 
   // Guardar mensajes en Local Storage cada vez que cambian
   useEffect(() => {
     localStorage.setItem('mentzermind-chat-history', JSON.stringify(messages))
   }, [messages])
+
+  // Verificar la salud del servidor backend periódicamente
+  useEffect(() => {
+    const checkServerHealth = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/health`)
+        if (response.ok) {
+          setIsOnline(true)
+        } else {
+          setIsOnline(false)
+        }
+      } catch (error) {
+        setIsOnline(false)
+      }
+    }
+
+    // Checar inmediatamente al montar el componente
+    checkServerHealth()
+
+    // Luego checar cada 30 segundos
+    const interval = setInterval(checkServerHealth, 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Función para borrar el historial
   const clearHistory = () => {
@@ -233,9 +257,9 @@ const ChatInterface = () => {
             >
               Borrar Chat
             </button>
-            <div className="status-indicator">
+            <div className={`status-indicator ${!isOnline ? 'offline' : ''}`}>
               <div className="status-dot"></div>
-              <span>En línea</span>
+              <span>{isOnline ? 'En línea' : 'Desconectado'}</span>
             </div>
           </div>
         </div>
