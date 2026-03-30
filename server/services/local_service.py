@@ -16,3 +16,23 @@ async def call_local_stub(message: str, context: Optional[List[dict]], system_pr
     for word in words:
         yield word + " "
         await asyncio.sleep(0.1)
+
+#
+# async def call_local_stub(message: str, context: Optional[List[dict]], system_prompt: str) -> AsyncGenerator[str, None]:
+#     logger.debug("Simulando fragmentación de paquetes TCP (SSE)...")
+#     
+#     # Paquete 1: Un JSON incompleto (le falta cerrar las comillas y la llave)
+#     fragmento_1 = '{"text": "Este mensaje llegó fragmentado en '
+#     
+#     # Paquete 2: El resto del JSON
+#     fragmento_2 = 'dos paquetes TCP diferentes."}'
+#     
+#     # Disparamos la primera mitad
+#     yield fragmento_1
+#     
+#     # Simulamos que el paquete se atoró en la red por 2 segundos
+#     await asyncio.sleep(2.0)
+#     
+#     # Disparamos la segunda mitad
+#     yield fragmento_2
+#

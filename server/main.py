@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.gemini_service import call_gemini
 from services.local_service import call_local_stub
@@ -35,7 +35,7 @@ class MessageDict(BaseModel):
 class ChatRequest(BaseModel):
     """Payload esperado desde el frontend."""
 
-    message: str
+    message: str = Field(..., max_length=2000, description="El mensaje del usuario")
     conversationId: Optional[str] = None
     context: Optional[List[MessageDict]] = None
 
@@ -51,7 +51,7 @@ app = FastAPI(title="MentzerMind API", version="0.1.0")
 # Configuración de CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, cambiar por el dominio del frontend
+    allow_origins=["http://localhost:5173", "https://mentzer-mind.vercel.app"],  # En producción, cambiar por el dominio del frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

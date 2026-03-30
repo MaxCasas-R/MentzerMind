@@ -48,6 +48,37 @@ const ChatInterface = () => {
     localStorage.setItem('mentzermind-chat-history', JSON.stringify(messages))
   }, [messages])
 
+  // Verificar el estado de la red (WiFi/Internet)
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true)
+    }
+    const handleOffline = () => {
+      setIsOnline(false)
+      setMessages(prev => [
+        ...prev,
+        createMessage(
+          'bot',
+          '⚠️ **Error de red detectado:** Parece que has perdido tu conexión a internet (WiFi/Red). Por favor, verifica tu conexión para continuar.'
+        )
+      ])
+    }
+
+    // Escuchar eventos de red del navegador
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    // Checar estado inicial
+    if (!navigator.onLine) {
+      handleOffline()
+    }
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
   // Verificar la salud del servidor backend periódicamente
   useEffect(() => {
     const checkServerHealth = async () => {
@@ -172,6 +203,17 @@ const ChatInterface = () => {
   const handleSendMessage = async () => {
     const trimmedMessage = inputMessage.trim()
     if (trimmedMessage === '' || isTyping) return
+
+    if (!navigator.onLine) {
+      setMessages(prev => [
+        ...prev,
+        createMessage(
+          'bot',
+          '⚠️ **Error de red:** No tienes conexión a internet vigente (WiFi/Red). Conéctate nuevamente para enviar mensajes.'
+        )
+      ])
+      return
+    }
 
     const userMessage = createMessage('user', trimmedMessage)
     const currentMessages = [...messages]
